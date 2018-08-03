@@ -18,6 +18,7 @@ class TransientDetector():
         self.outputFileName = None
         self.outputFile = None
         self.headerStored = False
+        self.IsFieldThresholdScanSetup = False
 
     def clearBuffer(self):
         # Read the rest of the buffer to clear things out
@@ -66,7 +67,7 @@ class TransientDetector():
             ts = time.time()
             st = datetime.datetime.fromtimestamp(
                 ts).strftime("%Y-%m-%d_%H-%M-%S")
-            self.outputFileName = "%s.csv"
+            self.outputFileName = "photonCounter_%s.csv"
 
         print(("Writing to output file %s" % (self.outputFileName)))
         self.outputFile = open(self.outputFileName, 'w')
@@ -134,8 +135,8 @@ class TransientDetector():
         self.outputFile.close()
 
     # Collect Header Information from User
-    def getCommonInfo(self, discThresholdmV=None, run=None, freqband=None, pol=None,
-                      weather=None, daynight=None, boxno=None, atten=None, comments=None):
+    def getCommonInfo(self, run=None, freqband=None, pol=None,
+                      weather=None, daynight=None, boxno=None, before_stage1_attenfilter=None, after_stage2_attenfilter=None, comments=None):
         # Store the settings of the run.
         # We want to store the start date and time
         # UHF/VHF boxes, antennas, polarization
@@ -156,7 +157,7 @@ class TransientDetector():
             self.run = int(eval(input("Run Number? (Integer please)")))
 
         # use the run number and date-time to name the output file
-        self.outputFileName = "run%d_%s.hdf5" % (self.run, self.datestr)
+        self.outputFileName = "photonCounter_run%d_%s.hdf5" % (self.run, self.datestr)
         print(("File name %s" % self.outputFileName))
 
         # Now store the prompts
@@ -167,7 +168,7 @@ class TransientDetector():
 
         # Sets of Boxes -- either 1 or 2
         self.boxno = boxno
-        if((self.boxno == None) or (self.freqband != 1 and self.freqband != 2)):
+        if((self.boxno == None) or (self.boxno != 1 and self.boxno!= 2)):
             self.boxno = int(float(eval(input("Box No.? (1/2)"))))
 
         # Polarization -- either H or V
@@ -175,10 +176,18 @@ class TransientDetector():
         if((self.pol == None) or (self.pol != 'H' and self.freqband != 'V')):
             self.pol = input("Polarization? (H/V)")
 
-	# Attenuation 
-        self.atten = atten
-        if( (self.atten == None) ):
-            self.atten = float(eval(input("Attenuation (dB)?")))
+        # Attenuation or filters
+        # Before stage1
+        self.before_stage1_attenfilter = before_stage1_attenfilter
+        if (self.before_stage1_attenfilter == None):
+            self.before_stage1_attenfilter = input(
+                "Attenuation or Filters before Stage 1? ( e.g. 0 dB, SLP-80)")
+
+        # After Stage2
+        self.after_stage2_attenfilter = after_stage2_attenfilter
+        if (self.after_stage2_attenfilter == None):
+            self.after_stage2_attenfilter = input(
+                "Attenuation or Filters after Stage 2? ( e.g. 10 dB, 450 MHz Notch)")
 
         # Weather -- whatever you like
         self.weather = weather
@@ -195,7 +204,8 @@ class TransientDetector():
 
     # Setup run at a Fixed Threshold
     def setupFixedRun(self, dirc, runTimeMinutes=1.0, discThresholdmV=None, run=None, freqband=None, pol=None,
-                      weather=None, daynight=None, atten=None, boxno=None, comments=None):
+                      weather=None, daynight=None, before_stage1_attenfilter=None,
+                      after_stage2_attenfilter=None, boxno=None, comments=None):
 
         # directory where you will store the run
         self.dirc = dirc
@@ -205,7 +215,7 @@ class TransientDetector():
         # Ask the user for things:
         self.getCommonInfo(run=run, freqband=freqband, pol=pol,
                            weather=weather, daynight=daynight,
-			   atten=atten,boxno=boxno,comments=comments)
+                           before_stage1_attenfilter=before_stage1_attenfilter, after_stage2_attenfilter=after_stage2_attenfilter, boxno=boxno, comments=comments)
 
         # Discriminator Threshold
         self.discThresholdmV = discThresholdmV
@@ -263,7 +273,7 @@ class TransientDetector():
         self.header = pd.DataFrame({'run': run, 'timestamp': self.timestamp, 'filename': self.outputFileName,
                                     'freqband': self.freqband, 'pol': self.pol, 'weather': self.weather,
                                     'daynight': self.daynight, 'comments': self.comments,
-				    'boxno': self.boxno, 'atten':self.atten,
+                                    'boxno': self.boxno, 'before_stage1_attenfilter': self.before_stage1_attenfilter, 'after_stage2_attenfilter': self.after_stage2_attenfilter,
                                     'fixedDiscThresholdmV': self.fixedDiscriminatorThresholdmV, 'discAMode': self.discAMode,
                                     'runTimeMinutes': self.runTimeMinutes, 'countPeriodSeconds': self.countPeriodSeconds, 'NPeriods': self.NPeriods,
                                     'countMode': self.countMode, 'counterAInput': self.countAInput, 'counterTInput': self.countTInput,
@@ -290,7 +300,8 @@ class TransientDetector():
         # Uncertainty is related to the latecy between sending and receiving a command
         self.timestamps = []
         self.counts = []
-
+	
+        print("Running for %2.1f minutes at discriminator threshold %2.2f mV"%(runTimeMinutes, self.fixedDiscriminatorThresholdmV))
         # start the scan and read the data back
         for i in range(self.NPeriods):
             # Store the time stamp
@@ -334,7 +345,8 @@ class TransientDetector():
 
     # Setup run at a Threshold Scan in the Field
     def setupFieldThresholdScan(self, dirc, minThresholdmV=0.00, maxThresholdmV=300.0, deltaThresholdmV=1.0,
-                                run=None, freqband=None, pol=None, weather=None, daynight=None, comments=None):
+                                run=None, freqband=None, pol=None,weather=None, daynight=None,
+                                before_stage1_attenfilter=None,after_stage2_attenfilter=None, boxno=None, comments=None):
 
         # directory where you will store the run
         self.dirc = dirc
@@ -342,8 +354,8 @@ class TransientDetector():
             self.dirc = self.dirc + "/"
 
         # Ask the user for things:
-        self.getCommonInfo(run=run, freqband=freqband, pol=pol,
-                           weather=weather, daynight=daynight, comments=comments)
+        self.getCommonInfo(run=run, freqband=freqband, pol=pol,weather=weather, daynight=daynight,
+                                before_stage1_attenfilter=before_stage1_attenfilter,after_stage2_attenfilter=after_stage2_attenfilter, boxno=boxno, comments=comments)
 
         # Before we start asking the photon counter things
         # Read anything in the buffer to clear things out
@@ -402,11 +414,12 @@ class TransientDetector():
         self.header.to_hdf(self.dirc + self.outputFileName,
                            key='header', mode='a', )
         self.headerStored = True
+        self.IsFieldThresholdScanSetup = True
 
     # Run a Threshold Scan in the Field
     def runFieldThresholdScan(self, dirc):
 
-        if(self.outputFileName == None):
+        if(self.IsFieldThresholdScanSetup == False):
             self.setupFieldThresholdScan(dirc)
 
         # Define some variables to store
@@ -468,6 +481,7 @@ class TransientDetector():
 
         # Reset flag in case you want to run again
         self.headerStored = False
+        self.IsFieldThresholdScanSetup = False
 
 
 if __name__ == "__main__":
@@ -492,11 +506,11 @@ if __name__ == "__main__":
     sr = TransientDetector()
     #sr.setupLabThresholdScan("/home/radio/data/transientDetector/photonCounter/May27_VHFBoxes1_VPOL_ThresholdScan_Terminated.csv", minThresholdmV=0.0, maxThresholdmV=100.0)
     # sr.runLabThresholdScan()
-    if( run_mode == 'fixed_threshold'):
-    	sr.setupFixedRun(dirc = dircPrefix)
-    	sr.runFixedCounter(dirc=dircPrefix, runTimeMinutes=run_minutes)
-    elif( run_mode == 'threshold_scan'):
-    	sr.runFieldThresholdScan(dirc=dircPrefix)
+    if(run_mode == 'fixed_threshold'):
+        sr.setupFixedRun(dirc=dircPrefix)
+        sr.runFixedCounter(dirc=dircPrefix, runTimeMinutes=run_minutes)
+    elif(run_mode == 'threshold_scan'):
+        sr.runFieldThresholdScan(dirc=dircPrefix)
     else:
-        print("\tusage:ipython transientDetector.py threshold_scan\n \t\t--or--\n \t ipython transientDetector.py fixed_threshold runMinutes[default 10.0]\n")
-
+        print(
+            "\tusage:ipython transientDetector.py threshold_scan\n \t\t--or--\n \t ipython transientDetector.py fixed_threshold runMinutes[default 10.0]\n")
