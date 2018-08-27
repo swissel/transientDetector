@@ -173,7 +173,7 @@ class TransientDetector():
 
         # Polarization -- either H or V
         self.pol = pol
-        if((self.pol == None) or (self.pol != 'H' and self.freqband != 'V')):
+        if((self.pol == None) or (self.pol != 'H' and self.pol != 'V')):
             self.pol = input("Polarization? (H/V)")
 
         # Attenuation or filters
